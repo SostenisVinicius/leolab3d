@@ -2,10 +2,19 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { notFound } from "next/navigation";
 import { ProductAdminForm } from "@/components/product-admin-form";
-import { products } from "@/lib/demo-data";
+import { db } from "@/db";
+import { collections } from "@/db/schema";
+import { asc } from "drizzle-orm";
+import { getProductWithCollections } from "@/lib/admin-data";
 export default async function EditProduct({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const p = products.find((x) => x.id === id);
+  const [p, options] = await Promise.all([
+    getProductWithCollections(id),
+    db
+      .select({ id: collections.id, name: collections.name })
+      .from(collections)
+      .orderBy(asc(collections.name)),
+  ]);
   if (!p) notFound();
   return (
     <>
@@ -19,7 +28,7 @@ export default async function EditProduct({ params }: { params: Promise<{ id: st
         </div>
       </header>
       <section className="admin-content">
-        <ProductAdminForm product={p} />
+        <ProductAdminForm product={p} collections={options} />
       </section>
     </>
   );

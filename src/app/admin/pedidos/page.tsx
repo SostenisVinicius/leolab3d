@@ -1,27 +1,44 @@
 import Link from "next/link";
-import { Search, SlidersHorizontal } from "lucide-react";
-import { demoQuotes } from "@/lib/demo-data";
+import { Search } from "lucide-react";
+import { getAdminQuotes } from "@/lib/admin-data";
 import { formatCurrency, statusLabels } from "@/lib/utils";
-export default function AdminOrders() {
+
+export default async function AdminOrders({
+  searchParams,
+}: {
+  searchParams: Promise<{ status?: string; busca?: string }>;
+}) {
+  const query = await searchParams;
+  const quotes = await getAdminQuotes(query.status, query.busca);
   return (
     <>
       <header className="admin-header">
         <div>
-          <span>Demandas</span>
+          <span>Central de demandas</span>
           <h1>Pedidos e orçamentos</h1>
-          <p>Analise solicitações e acompanhe a fila de produção.</p>
+          <p>Analise solicitações, envie propostas e acompanhe a produção.</p>
         </div>
       </header>
       <section className="admin-content">
-        <div className="admin-toolbar">
+        <form className="admin-toolbar order-filters">
           <label>
             <Search />
-            <input placeholder="Buscar protocolo, cliente ou peça..." />
+            <input
+              name="busca"
+              defaultValue={query.busca}
+              placeholder="Protocolo, cliente ou peça..."
+            />
           </label>
-          <button>
-            <SlidersHorizontal /> Filtros
-          </button>
-        </div>
+          <select name="status" defaultValue={query.status ?? ""}>
+            <option value="">Todos os status</option>
+            {Object.entries(statusLabels).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <button className="button button-sm">Filtrar</button>
+        </form>
         <div className="data-card table-card">
           <div className="table-head">
             <span>Pedido</span>
@@ -30,18 +47,31 @@ export default function AdminOrders() {
             <span>Valor</span>
             <span>Recebido em</span>
           </div>
-          {demoQuotes.map((q) => (
-            <Link href={`/admin/pedidos/${q.id}`} className="table-row" key={q.id}>
-              <div>
-                <small>{q.protocol}</small>
-                <strong>{q.title}</strong>
-              </div>
-              <span>{q.customer}</span>
-              <span className={`status status-${q.status}`}>{statusLabels[q.status]}</span>
-              <b>{formatCurrency(q.value)}</b>
-              <span>{q.date}</span>
-            </Link>
-          ))}
+          {quotes.length ? (
+            quotes.map((q) => (
+              <Link href={`/admin/pedidos/${q.id}`} className="table-row" key={q.id}>
+                <div>
+                  <small>{q.protocol}</small>
+                  <strong>{q.title}</strong>
+                </div>
+                <span>{q.customerName}</span>
+                <span className={`status status-${q.status}`}>{statusLabels[q.status]}</span>
+                <b>{formatCurrency(q.proposedPriceCents)}</b>
+                <span>
+                  {new Intl.DateTimeFormat("pt-BR", {
+                    dateStyle: "short",
+                    timeStyle: "short",
+                  }).format(q.createdAt)}
+                </span>
+              </Link>
+            ))
+          ) : (
+            <div className="admin-empty">
+              <span className="empty-symbol">LL</span>
+              <h3>Nenhum pedido encontrado</h3>
+              <p>Ajuste os filtros ou aguarde uma nova solicitação.</p>
+            </div>
+          )}
         </div>
       </section>
     </>

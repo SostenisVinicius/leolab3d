@@ -1,8 +1,32 @@
 import { UploadCloud } from "lucide-react";
-import { collections, type Product } from "@/lib/demo-data";
-export function ProductAdminForm({ product }: { product?: Product }) {
+import { saveProduct } from "@/app/actions/admin";
+type ProductForm = {
+  id: string;
+  name: string;
+  slug: string;
+  shortDescription: string;
+  description: string;
+  coverUrl: string | null;
+  material: string | null;
+  dimensions: string | null;
+  finish: string | null;
+  estimatedDays: number | null;
+  startingPriceCents: number | null;
+  status: "draft" | "published" | "archived";
+  featured: boolean;
+  collectionIds: string[];
+};
+type CollectionOption = { id: string; name: string };
+export function ProductAdminForm({
+  product,
+  collections,
+}: {
+  product?: ProductForm | null;
+  collections: CollectionOption[];
+}) {
   return (
-    <form className="admin-form-layout">
+    <form action={saveProduct} className="admin-form-layout">
+      {product && <input type="hidden" name="id" value={product.id} />}
       <div>
         <div className="data-card form-card">
           <h2>Informações básicas</h2>
@@ -28,24 +52,31 @@ export function ProductAdminForm({ product }: { product?: Product }) {
           <div className="form-grid">
             <label>
               Material
-              <input defaultValue={product?.material} />
+              <input name="material" defaultValue={product?.material ?? ""} />
             </label>
             <label>
               Dimensões
-              <input defaultValue={product?.dimensions} />
+              <input name="dimensions" defaultValue={product?.dimensions ?? ""} />
             </label>
             <label>
               Acabamento
-              <input defaultValue={product?.finish} />
+              <input name="finish" defaultValue={product?.finish ?? ""} />
             </label>
             <label>
               Prazo estimado
-              <input type="number" defaultValue={product?.estimatedDays} />
+              <input
+                name="estimatedDays"
+                type="number"
+                defaultValue={product?.estimatedDays ?? ""}
+              />
             </label>
             <label>
               Valor inicial (R$)
               <input
+                name="startingPrice"
                 type="number"
+                min="0"
+                step="0.01"
                 defaultValue={
                   product?.startingPriceCents ? product.startingPriceCents / 100 : undefined
                 }
@@ -58,8 +89,8 @@ export function ProductAdminForm({ product }: { product?: Product }) {
         <div className="data-card form-card">
           <h2>Imagem de capa</h2>
           <div className="upload-box">
-            {product ? (
-              <div style={{ backgroundImage: `url(${product.image})` }} />
+            {product?.coverUrl ? (
+              <div style={{ backgroundImage: `url(${product.coverUrl})` }} />
             ) : (
               <>
                 <UploadCloud />
@@ -68,24 +99,40 @@ export function ProductAdminForm({ product }: { product?: Product }) {
               </>
             )}
           </div>
+          <label>
+            URL da imagem
+            <input
+              name="coverUrl"
+              type="url"
+              defaultValue={product?.coverUrl ?? ""}
+              placeholder="https://..."
+            />
+          </label>
         </div>
         <div className="data-card form-card">
           <h2>Publicação</h2>
           <label>
             Status
-            <select defaultValue="published">
+            <select name="status" defaultValue={product?.status ?? "draft"}>
               <option value="draft">Rascunho</option>
               <option value="published">Publicado</option>
               <option value="archived">Arquivado</option>
             </select>
           </label>
           <label className="checkbox">
-            <input type="checkbox" defaultChecked={product?.featured} /> Destacar na home
+            <input name="featured" type="checkbox" defaultChecked={product?.featured} /> Destacar na
+            home
           </label>
           <h3>Coleções</h3>
           {collections.map((c) => (
-            <label className="checkbox" key={c.slug}>
-              <input type="checkbox" /> {c.name}
+            <label className="checkbox" key={c.id}>
+              <input
+                name="collectionIds"
+                value={c.id}
+                type="checkbox"
+                defaultChecked={product?.collectionIds.includes(c.id)}
+              />{" "}
+              {c.name}
             </label>
           ))}
           <button className="button">Salvar produto</button>

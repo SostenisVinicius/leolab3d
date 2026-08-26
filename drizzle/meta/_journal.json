@@ -15,6 +15,13 @@
       "when": 1787762899847,
       "tag": "0001_rich_polaris",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787765801447,
+      "tag": "0002_rainy_shiver_man",
+      "breakpoints": true
     }
   ]
 }
