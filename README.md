@@ -44,6 +44,8 @@ Encerre a sessão e entre novamente. Rotas `/admin` verificam o papel no servido
 
 Depois do primeiro administrador, novos acessos são gerenciados em `/admin/equipe`: a pessoa cria uma conta normal e um administrador promove o perfil. O sistema impede auto-rebaixamento e remoção do último administrador, registrando cada mudança em `user_role_history`.
 
+Se for necessário recuperar a senha do primeiro administrador, defina `ADMIN_EMAIL`, `ADMIN_PASSWORD` e `RESET_ADMIN_PASSWORD=true` apenas no ambiente local e execute `npm run db:reset-admin-password`. O comando usa o hasher do Better Auth e revoga as sessões anteriores. Remova a confirmação e a senha do ambiente após o uso.
+
 ## Comandos
 
 - `npm run dev`, `lint`, `lint:fix`, `format`, `format:check`, `typecheck`, `test` e `build`.
