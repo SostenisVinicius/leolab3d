@@ -29,7 +29,9 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
       setError(result.error.message ?? "Não foi possível continuar.");
       return;
     }
-    router.push("/minha-conta/pedidos");
+    const session = await authClient.getSession();
+    const role = (session.data?.user as { role?: string } | undefined)?.role;
+    router.push(role === "admin" ? "/admin" : "/minha-conta/pedidos");
     router.refresh();
   }
   return (

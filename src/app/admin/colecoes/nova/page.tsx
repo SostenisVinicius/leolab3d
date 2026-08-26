@@ -1,5 +1,12 @@
 import { CollectionAdminForm } from "@/components/collection-admin-form";
-export default function NewCollection() {
+import { db } from "@/db";
+import { products } from "@/db/schema";
+import { asc } from "drizzle-orm";
+export default async function NewCollection() {
+  const options = await db
+    .select({ id: products.id, name: products.name, coverUrl: products.coverUrl })
+    .from(products)
+    .orderBy(asc(products.name));
   return (
     <>
       <header className="admin-header">
@@ -10,7 +17,7 @@ export default function NewCollection() {
         </div>
       </header>
       <section className="admin-content">
-        <CollectionAdminForm />
+        <CollectionAdminForm products={options} />
       </section>
     </>
   );

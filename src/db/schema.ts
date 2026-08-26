@@ -220,6 +220,26 @@ export const quoteStatusHistory = pgTable("quote_status_history", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const userRoleHistory = pgTable(
+  "user_role_history",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    previousRole: userRole("previous_role").notNull(),
+    newRole: userRole("new_role").notNull(),
+    changedBy: text("changed_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("user_role_history_user_idx").on(table.userId),
+    index("user_role_history_changed_by_idx").on(table.changedBy),
+  ],
+);
+
 export const productsRelations = relations(products, ({ many }) => ({
   images: many(productImages),
   collections: many(productsToCollections),
@@ -239,4 +259,18 @@ export const quoteRelations = relations(quoteRequests, ({ many, one }) => ({
   items: many(quoteRequestItems),
   attachments: many(quoteAttachments),
   history: many(quoteStatusHistory),
+}));
+export const quoteRequestItemsRelations = relations(quoteRequestItems, ({ one }) => ({
+  quote: one(quoteRequests, {
+    fields: [quoteRequestItems.quoteRequestId],
+    references: [quoteRequests.id],
+  }),
+  product: one(products, { fields: [quoteRequestItems.productId], references: [products.id] }),
+}));
+export const quoteStatusHistoryRelations = relations(quoteStatusHistory, ({ one }) => ({
+  quote: one(quoteRequests, {
+    fields: [quoteStatusHistory.quoteRequestId],
+    references: [quoteRequests.id],
+  }),
+  author: one(users, { fields: [quoteStatusHistory.changedBy], references: [users.id] }),
 }));

@@ -1,11 +1,13 @@
 import Link from "next/link";
-import { ArrowLeft, CalendarDays, Mail, Phone } from "lucide-react";
+import { ArrowLeft, CalendarDays, Mail, Paperclip, Phone } from "lucide-react";
 import { notFound } from "next/navigation";
-import { demoQuotes } from "@/lib/demo-data";
+import { updateQuote } from "@/app/actions/admin";
+import { getAdminQuote } from "@/lib/admin-data";
 import { formatCurrency, statusLabels } from "@/lib/utils";
+
 export default async function AdminOrder({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const q = demoQuotes.find((x) => x.id === id);
+  const q = await getAdminQuote(id);
   if (!q) notFound();
   return (
     <>
@@ -23,79 +25,137 @@ export default async function AdminOrder({ params }: { params: Promise<{ id: str
         <div>
           <div className="data-card order-section">
             <h2>Detalhes da solicitação</h2>
-            <p>
-              Gostaria de uma peça personalizada com acabamento premium, base identificada e cores
-              próximas à referência. A escala pode ser ajustada conforme a recomendação do
-              laboratório.
-            </p>
+            <p>{q.description}</p>
             <div className="request-meta">
               <span>
-                Quantidade<strong>1 unidade</strong>
+                Quantidade
+                <strong>
+                  {q.quantity} {q.quantity === 1 ? "unidade" : "unidades"}
+                </strong>
               </span>
               <span>
-                Prazo desejado<strong>20 de setembro</strong>
+                Prazo desejado
+                <strong>
+                  {q.desiredDate
+                    ? new Intl.DateTimeFormat("pt-BR").format(q.desiredDate)
+                    : "Não informado"}
+                </strong>
               </span>
               <span>
-                Tipo<strong>Peça do catálogo</strong>
+                Tipo
+                <strong>
+                  {q.kind === "catalog" ? "Peça do catálogo" : "Projeto personalizado"}
+                </strong>
               </span>
             </div>
+            {q.items.length > 0 && (
+              <div className="quote-items">
+                <h3>Itens</h3>
+                {q.items.map((item) => (
+                  <span key={item.id}>
+                    {item.productName}
+                    <b>{item.quantity}x</b>
+                  </span>
+                ))}
+              </div>
+            )}
+            {q.attachments.length > 0 && (
+              <div className="quote-attachments">
+                {q.attachments.map((file) => (
+                  <a href={file.url} target="_blank" key={file.id}>
+                    <Paperclip />
+                    {file.fileName}
+                  </a>
+                ))}
+              </div>
+            )}
           </div>
           <div className="data-card order-section">
             <h2>Histórico</h2>
-            <div className="history-line">
-              <i />
-              <div>
-                <strong>Solicitação recebida</strong>
-                <p>Pedido criado pelo cliente.</p>
-                <small>{q.date}</small>
-              </div>
-            </div>
+            {q.history.length ? (
+              q.history.map((event) => (
+                <div className="history-line" key={event.id}>
+                  <i />
+                  <div>
+                    <strong>{statusLabels[event.toStatus]}</strong>
+                    {event.note && <p>{event.note}</p>}
+                    <small>
+                      {event.author?.name ?? "Sistema"} ·{" "}
+                      {new Intl.DateTimeFormat("pt-BR", {
+                        dateStyle: "short",
+                        timeStyle: "short",
+                      }).format(event.createdAt)}
+                    </small>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="muted-text">Nenhuma alteração registrada.</p>
+            )}
           </div>
         </div>
         <aside>
           <div className="data-card customer-card">
             <h2>Cliente</h2>
-            <strong>{q.customer}</strong>
-            <a href="#">
-              <Mail /> cliente@email.com
+            <strong>{q.customerName}</strong>
+            <a href={`mailto:${q.customerEmail}`}>
+              <Mail />
+              {q.customerEmail}
             </a>
-            <a href="#">
-              <Phone /> (11) 99999-9999
+            <a href={`tel:${q.customerPhone}`}>
+              <Phone />
+              {q.customerPhone}
             </a>
             <span>
-              <CalendarDays /> Cliente desde ago. 2026
+              <CalendarDays />
+              Recebido em {new Intl.DateTimeFormat("pt-BR").format(q.createdAt)}
             </span>
           </div>
-          <form className="data-card proposal-form">
+          <form action={updateQuote} className="data-card proposal-form">
+            <input type="hidden" name="id" value={q.id} />
             <h2>Análise e proposta</h2>
             <label>
               Status
-              <select defaultValue={q.status}>
-                <option value="pending">Pendente</option>
-                <option value="reviewing">Em análise</option>
-                <option value="waiting_customer">Aguardando cliente</option>
-                <option value="approved">Aprovado</option>
-                <option value="in_production">Em produção</option>
-                <option value="completed">Concluído</option>
-                <option value="rejected">Recusado</option>
+              <select name="status" defaultValue={q.status}>
+                {Object.entries(statusLabels).map(([value, label]) => (
+                  <option value={value} key={value}>
+                    {label}
+                  </option>
+                ))}
               </select>
             </label>
             <label>
               Valor proposto (R$)
-              <input type="number" defaultValue={q.value ? q.value / 100 : ""} />
+              <input
+                name="price"
+                type="number"
+                min="0"
+                step="0.01"
+                defaultValue={q.proposedPriceCents ? q.proposedPriceCents / 100 : ""}
+              />
             </label>
             <label>
               Prazo estimado (dias)
-              <input type="number" defaultValue="18" />
+              <input
+                name="estimatedDays"
+                type="number"
+                min="1"
+                defaultValue={q.estimatedDays ?? ""}
+              />
             </label>
             <label>
               Observações
-              <textarea rows={4} placeholder="Mensagem visível para o cliente..." />
+              <textarea
+                name="adminNotes"
+                rows={5}
+                defaultValue={q.adminNotes ?? ""}
+                placeholder="Mensagem e detalhes da proposta..."
+              />
             </label>
-            <button className="button">Salvar e notificar cliente</button>
-            {q.value && (
+            <button className="button">Salvar atualização</button>
+            {q.proposedPriceCents && (
               <p>
-                Proposta atual: <strong>{formatCurrency(q.value)}</strong>
+                Proposta atual: <strong>{formatCurrency(q.proposedPriceCents)}</strong>
               </p>
             )}
           </form>
