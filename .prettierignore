@@ -1,0 +1,11 @@
+.next
+node_modules
+coverage
+out
+build
+drizzle/meta
+package-lock.json
+public/*.svg
+npm-install.*
+build.*
+server.*
