@@ -8,6 +8,13 @@
       "when": 1787751335844,
       "tag": "0000_colossal_natasha_romanoff",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1787762899847,
+      "tag": "0001_rich_polaris",
+      "breakpoints": true
     }
   ]
 }
