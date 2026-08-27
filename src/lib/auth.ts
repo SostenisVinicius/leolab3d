@@ -13,8 +13,22 @@ const authSchema = {
   verification: schema.verifications,
 };
 
+const productionURL = process.env.BETTER_AUTH_URL ?? "https://leolab3d.vercel.app";
+const authBaseURL =
+  process.env.VERCEL === "1"
+    ? {
+        allowedHosts: ["leolab3d.vercel.app", "leolab3d-*.vercel.app"],
+        protocol: "https" as const,
+        fallback: productionURL,
+      }
+    : {
+        allowedHosts: ["localhost:*", "127.0.0.1:*"],
+        protocol: "http" as const,
+        fallback: "http://localhost:3000",
+      };
+
 export const auth = betterAuth({
-  baseURL: process.env.BETTER_AUTH_URL ?? "http://localhost:3000",
+  baseURL: authBaseURL,
   secret:
     process.env.BETTER_AUTH_SECRET ??
     (databaseConfigured ? undefined : "leolab3d-demo-only-secret-32-chars"),
