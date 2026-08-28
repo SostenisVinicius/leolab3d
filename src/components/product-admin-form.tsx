@@ -3,6 +3,7 @@
 import { saveProduct, type AdminFormState } from "@/app/actions/admin";
 import { AdminSubmitButton } from "@/components/admin-submit-button";
 import { ImageUpload } from "@/components/image-upload";
+import { CurrencyInput } from "@/components/currency-input";
 import { useActionState } from "react";
 type ProductForm = {
   id: string;
@@ -78,15 +79,7 @@ export function ProductAdminForm({
             </label>
             <label>
               Valor inicial (R$)
-              <input
-                name="startingPrice"
-                type="number"
-                min="0"
-                step="0.01"
-                defaultValue={
-                  product?.startingPriceCents ? product.startingPriceCents / 100 : undefined
-                }
-              />
+              <CurrencyInput name="startingPriceCents" initialCents={product?.startingPriceCents} />
             </label>
           </div>
         </div>

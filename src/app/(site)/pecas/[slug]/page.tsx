@@ -1,18 +1,21 @@
 import Link from "next/link";
 import { ArrowRight, Box, Clock3, Paintbrush, Ruler } from "lucide-react";
 import { notFound } from "next/navigation";
-import { products } from "@/lib/demo-data";
+import { getPublishedProduct } from "@/lib/public-data";
 import { formatCurrency } from "@/lib/utils";
 
 export default async function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const p = products.find((item) => item.slug === slug);
+  const p = await getPublishedProduct(slug);
   if (!p) notFound();
   return (
     <section className="section product-page">
       <div className="container product-detail">
-        <div className="detail-image" style={{ backgroundImage: `url(${p.image})` }}>
-          <span>{p.category}</span>
+        <div
+          className="detail-image"
+          style={{ backgroundImage: p.image ? `url(${p.image})` : undefined }}
+        >
+          <span>{p.material ?? "Peça 3D"}</span>
         </div>
         <div className="detail-copy">
           <div className="breadcrumbs">
@@ -25,25 +28,28 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
             <div>
               <Box />
               <span>
-                Material<strong>{p.material}</strong>
+                Material<strong>{p.material ?? "Sob consulta"}</strong>
               </span>
             </div>
             <div>
               <Ruler />
               <span>
-                Dimensões<strong>{p.dimensions}</strong>
+                Dimensões<strong>{p.dimensions ?? "Personalizáveis"}</strong>
               </span>
             </div>
             <div>
               <Paintbrush />
               <span>
-                Acabamento<strong>{p.finish}</strong>
+                Acabamento<strong>{p.finish ?? "Sob consulta"}</strong>
               </span>
             </div>
             <div>
               <Clock3 />
               <span>
-                Prazo estimado<strong>{p.estimatedDays} dias úteis</strong>
+                Prazo estimado
+                <strong>
+                  {p.estimatedDays ? `${p.estimatedDays} dias úteis` : "Sob consulta"}
+                </strong>
               </span>
             </div>
           </div>

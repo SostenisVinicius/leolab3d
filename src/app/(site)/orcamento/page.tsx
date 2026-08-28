@@ -1,5 +1,5 @@
 import { QuoteForm } from "@/components/quote-form";
-import { products } from "@/lib/demo-data";
+import { getPublishedProduct } from "@/lib/public-data";
 
 export default async function QuotePage({
   searchParams,
@@ -7,7 +7,7 @@ export default async function QuotePage({
   searchParams: Promise<{ peca?: string }>;
 }) {
   const { peca } = await searchParams;
-  const product = products.find((p) => p.slug === peca);
+  const product = peca ? await getPublishedProduct(peca) : null;
   return (
     <>
       <section className="page-hero quote-hero">

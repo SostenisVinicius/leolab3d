@@ -2,11 +2,13 @@
 
 import { count, eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
+import { del } from "@vercel/blob";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
 import {
   collections,
+  productImages,
   products,
   productsToCollections,
   quoteRequests,
@@ -14,6 +16,7 @@ import {
   userRoleHistory,
   users,
 } from "@/db/schema";
+import { isManagedBlobUrl } from "@/lib/image-upload";
 import { requireAdmin } from "@/lib/session";
 
 export async function changeUserRole(formData: FormData) {
@@ -66,14 +69,14 @@ export async function updateQuote(formData: FormData) {
   const status = requestedStatus as (typeof valid)[number];
   const [current] = await db.select().from(quoteRequests).where(eq(quoteRequests.id, id)).limit(1);
   if (!current) throw new Error("Pedido não encontrado.");
-  const price = String(formData.get("price") ?? "");
+  const priceCents = optionalInteger(formData, "proposedPriceCents");
   const days = String(formData.get("estimatedDays") ?? "");
   const note = String(formData.get("adminNotes") ?? "").trim();
   const update = db
     .update(quoteRequests)
     .set({
       status,
-      proposedPriceCents: price ? Math.round(Number(price.replace(",", ".")) * 100) : null,
+      proposedPriceCents: priceCents,
       estimatedDays: days ? Number(days) : null,
       adminNotes: note || null,
       updatedAt: new Date(),
@@ -101,6 +104,13 @@ export async function updateQuote(formData: FormData) {
 function optionalText(formData: FormData, key: string) {
   const value = String(formData.get(key) ?? "").trim();
   return value || null;
+}
+
+function optionalInteger(formData: FormData, key: string) {
+  const value = optionalText(formData, key);
+  if (value == null) return null;
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number >= 0 ? number : null;
 }
 
 export type AdminFormState = { success: boolean; message: string };
@@ -133,7 +143,7 @@ export async function saveProduct(
       message: "O slug deve conter apenas letras minúsculas, números e hífens.",
     };
   }
-  const price = optionalText(formData, "startingPrice");
+  const priceCents = optionalInteger(formData, "startingPriceCents");
   const days = optionalText(formData, "estimatedDays");
   const values = {
     name,
@@ -145,7 +155,7 @@ export async function saveProduct(
     dimensions: optionalText(formData, "dimensions"),
     finish: optionalText(formData, "finish"),
     estimatedDays: days ? Number(days) : null,
-    startingPriceCents: price ? Math.round(Number(price.replace(",", ".")) * 100) : null,
+    startingPriceCents: priceCents,
     status: String(formData.get("status") ?? "draft") as "draft" | "published" | "archived",
     featured: formData.get("featured") === "on",
     updatedAt: new Date(),
@@ -175,8 +185,10 @@ export async function saveProduct(
   }
   revalidatePath("/admin/produtos");
   revalidatePath("/catalogo");
+  revalidatePath("/colecoes");
+  revalidatePath(`/pecas/${slug}`);
   revalidatePath("/");
-  redirect(`/admin/produtos/${productId}`);
+  redirect(`/admin/produtos/${productId}?salvo=1&status=${values.status}`);
 }
 
 export async function saveCollection(
@@ -230,6 +242,52 @@ export async function saveCollection(
   }
   revalidatePath("/admin/colecoes");
   revalidatePath("/colecoes");
+  revalidatePath(`/colecoes/${slug}`);
   revalidatePath("/");
-  redirect(`/admin/colecoes/${slug}`);
+  redirect(`/admin/colecoes/${slug}?salvo=1&status=${values.status}`);
+}
+
+/** Remove imagens hospedadas no Blob da aplicação. Falhas são registradas e não bloqueiam a exclusão. */
+async function deleteOwnedBlobs(urls: Array<string | null>) {
+  const managed = [...new Set(urls.filter(isManagedBlobUrl))] as string[];
+  if (!managed.length) return;
+  try {
+    await del(managed);
+  } catch (error) {
+    console.error("Não foi possível remover imagens do Blob:", error);
+  }
+}
+
+export async function deleteProduct(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id") ?? "");
+  const [product] = await db.select().from(products).where(eq(products.id, id)).limit(1);
+  if (!product) throw new Error("Produto não encontrado.");
+  const gallery = await db
+    .select({ url: productImages.url })
+    .from(productImages)
+    .where(eq(productImages.productId, id));
+  await db.delete(products).where(eq(products.id, id));
+  await deleteOwnedBlobs([product.coverUrl, ...gallery.map((image) => image.url)]);
+  revalidatePath("/");
+  revalidatePath("/catalogo");
+  revalidatePath("/colecoes");
+  revalidatePath(`/pecas/${product.slug}`);
+  revalidatePath("/admin/produtos");
+  redirect("/admin/produtos?excluido=1");
+}
+
+export async function deleteCollection(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id") ?? "");
+  const [collection] = await db.select().from(collections).where(eq(collections.id, id)).limit(1);
+  if (!collection) throw new Error("Coleção não encontrada.");
+  await db.delete(collections).where(eq(collections.id, id));
+  await deleteOwnedBlobs([collection.coverUrl]);
+  revalidatePath("/");
+  revalidatePath("/catalogo");
+  revalidatePath("/colecoes");
+  revalidatePath(`/colecoes/${collection.slug}`);
+  revalidatePath("/admin/colecoes");
+  redirect("/admin/colecoes?excluida=1");
 }

@@ -2,10 +2,15 @@ import Link from "next/link";
 import { Edit3, ImageIcon, Plus, Search } from "lucide-react";
 import { getAdminProducts } from "@/lib/admin-data";
 import { formatCurrency } from "@/lib/utils";
+import { AdminToast } from "@/components/admin-toast";
 
 const publication = { draft: "Rascunho", published: "Publicado", archived: "Arquivado" };
-export default async function AdminProducts() {
-  const rows = await getAdminProducts();
+export default async function AdminProducts({
+  searchParams,
+}: {
+  searchParams: Promise<{ excluido?: string }>;
+}) {
+  const [rows, notice] = await Promise.all([getAdminProducts(), searchParams]);
   return (
     <>
       <header className="admin-header">
@@ -59,6 +64,7 @@ export default async function AdminProducts() {
           </div>
         )}
       </section>
+      {notice.excluido && <AdminToast entity="produto" deleted />}
     </>
   );
 }

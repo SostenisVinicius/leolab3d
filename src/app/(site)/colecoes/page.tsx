@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import { collections } from "@/lib/demo-data";
+import { getPublishedCollections } from "@/lib/public-data";
 
-export default function CollectionsPage() {
+export default async function CollectionsPage() {
+  const collections = await getPublishedCollections();
   return (
     <>
       <section className="page-hero">
@@ -26,18 +27,27 @@ export default function CollectionsPage() {
               <div className="collection-number">0{i + 1}</div>
               <div
                 className="collection-row-image"
-                style={{ backgroundImage: `url(${c.image})` }}
+                style={{ backgroundImage: c.image ? `url(${c.image})` : undefined }}
               />
               <div>
-                <span className="kicker">{c.eyebrow}</span>
+                <span className="kicker">Coleção LeoLab3D</span>
                 <h2>{c.name}</h2>
                 <p>{c.description}</p>
                 <b>
-                  {c.productSlugs.length} peças <ArrowRight />
+                  {c.productCount} {c.productCount === 1 ? "peça" : "peças"} <ArrowRight />
                 </b>
               </div>
             </Link>
           ))}
+          {!collections.length && (
+            <div className="empty-state">
+              <h2>Novas coleções em breve</h2>
+              <p>Enquanto isso, explore nossas peças individuais.</p>
+              <Link className="button" href="/catalogo">
+                Ver catálogo
+              </Link>
+            </div>
+          )}
         </div>
       </section>
     </>

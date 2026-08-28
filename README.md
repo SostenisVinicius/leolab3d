@@ -14,7 +14,10 @@ Catálogo e central de orçamentos para peças 3D personalizadas. Usa Next.js Ap
 - Upload autenticado para Vercel Blob (imagens de até 8 MB).
 - Upload por clique ou arrastar e soltar com preview e progresso.
 - CRUD administrativo real de produtos e coleções no Neon.
-- Modo demonstração automático sem `DATABASE_URL`.
+- Catálogo público lê do Neon e mostra apenas conteúdo publicado.
+- Exclusão de produtos e coleções com confirmação e limpeza de imagens no Blob.
+- Campos monetários no padrão brasileiro, persistidos em centavos.
+- Confirmação visual das ações administrativas por toast.
 
 ## Configuração local
 
@@ -53,6 +56,24 @@ Se for necessário recuperar a senha do primeiro administrador, defina `ADMIN_EM
 - `npm run dev`, `lint`, `lint:fix`, `format`, `format:check`, `typecheck`, `test` e `build`.
 - `npm run db:generate`, `db:migrate`, `db:push` e `db:studio`.
 
+## Publicação e visibilidade
+
+Produtos e coleções têm três estados. O padrão de um novo registro é rascunho.
+
+| Status    | Admin   | Público |
+| --------- | ------- | ------- |
+| Rascunho  | Visível | Oculto  |
+| Publicado | Visível | Visível |
+| Arquivado | Visível | Oculto  |
+
+Home, catálogo, coleções, detalhe da peça e orçamento consultam o Neon por `src/lib/public-data.ts` e retornam apenas registros publicados — inclusive dentro de uma coleção publicada. URLs de itens não publicados respondem 404. Ao salvar como publicado, as ações revalidam `/`, `/catalogo`, `/colecoes`, `/pecas/[slug]` e `/colecoes/[slug]`, então o conteúdo aparece imediatamente.
+
+O catálogo filtra por coleção real (`/catalogo?colecao=slug`) e por busca em nome e resumo, preservando ambos os parâmetros entre filtros.
+
+## Exclusão
+
+As telas de edição têm uma zona de exclusão com confirmação em `<dialog>`. Excluir um produto remove seus vínculos com coleções e suas imagens auxiliares; os pedidos antigos preservam nome e quantidade porque `quote_request_items.product_id` usa `on delete set null`. Excluir uma coleção remove apenas o agrupamento e seus vínculos — os produtos continuam no catálogo. Imagens hospedadas no Blob da aplicação são removidas junto; URLs externas ficam intactas, e uma falha na limpeza é registrada em log sem impedir a exclusão.
+
 ## Modo demo
 
-Sem `DATABASE_URL`, o catálogo público usa conteúdo demonstrativo. Com Neon configurado, autenticação, orçamentos, dashboard administrativo, pedidos, produtos, coleções e equipe usam PostgreSQL. As ações compostas usam lotes atômicos compatíveis com o driver Neon HTTP.
+O catálogo público exige `DATABASE_URL`. Sem Neon configurado, apenas as telas da conta ainda usam conteúdo demonstrativo. Autenticação, orçamentos, dashboard administrativo, pedidos, produtos, coleções e equipe usam PostgreSQL. As ações compostas usam lotes atômicos compatíveis com o driver Neon HTTP.

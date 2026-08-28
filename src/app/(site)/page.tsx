@@ -1,9 +1,15 @@
 import Link from "next/link";
 import { ArrowRight, Box, Check, Layers3, ScanLine, Sparkles } from "lucide-react";
 import { ProductCard } from "@/components/product-card";
-import { collections, products } from "@/lib/demo-data";
+import { getPublishedCollections, getPublishedProducts } from "@/lib/public-data";
 
-export default function HomePage() {
+export default async function HomePage() {
+  const [featured, recent, collections] = await Promise.all([
+    getPublishedProducts({ featured: true, limit: 3 }),
+    getPublishedProducts({ limit: 3 }),
+    getPublishedCollections(3),
+  ]);
+  const products = featured.length ? featured : recent;
   return (
     <>
       <section className="hero">
@@ -99,9 +105,18 @@ export default function HomePage() {
             </Link>
           </div>
           <div className="product-grid">
-            {products.slice(0, 3).map((p) => (
+            {products.map((p) => (
               <ProductCard product={p} key={p.id} />
             ))}
+            {!products.length && (
+              <div className="empty-state">
+                <h3>O laboratório está preparando novidades</h3>
+                <p>Você já pode solicitar uma criação exclusiva.</p>
+                <Link className="button" href="/orcamento">
+                  Criar minha peça
+                </Link>
+              </div>
+            )}
           </div>
         </div>
       </section>
@@ -123,10 +138,12 @@ export default function HomePage() {
                 key={c.slug}
                 className={`collection-card collection-${i + 1}`}
                 style={{
-                  backgroundImage: `linear-gradient(0deg, rgba(3,15,25,.96), rgba(3,15,25,.08)), url(${c.image})`,
+                  backgroundImage: c.image
+                    ? `linear-gradient(0deg, rgba(3,15,25,.96), rgba(3,15,25,.08)), url(${c.image})`
+                    : "linear-gradient(145deg, #07384a, #03121d)",
                 }}
               >
-                <span>{c.eyebrow}</span>
+                <span>Coleção LeoLab3D</span>
                 <h3>{c.name}</h3>
                 <p>{c.description}</p>
                 <b>

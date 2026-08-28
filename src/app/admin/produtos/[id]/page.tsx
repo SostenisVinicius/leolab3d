@@ -6,8 +6,17 @@ import { db } from "@/db";
 import { collections } from "@/db/schema";
 import { asc } from "drizzle-orm";
 import { getProductWithCollections } from "@/lib/admin-data";
-export default async function EditProduct({ params }: { params: Promise<{ id: string }> }) {
+import { DeleteEntityButton } from "@/components/delete-entity-button";
+import { AdminToast } from "@/components/admin-toast";
+export default async function EditProduct({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ salvo?: string; status?: string }>;
+}) {
   const { id } = await params;
+  const notice = await searchParams;
   const [p, options] = await Promise.all([
     getProductWithCollections(id),
     db
@@ -29,7 +38,17 @@ export default async function EditProduct({ params }: { params: Promise<{ id: st
       </header>
       <section className="admin-content">
         <ProductAdminForm product={p} collections={options} />
+        <div className="danger-zone">
+          <div>
+            <strong>Excluir produto</strong>
+            <p>Pedidos antigos preservarão o nome e a quantidade da peça.</p>
+          </div>
+          <DeleteEntityButton id={p.id} entity="produto" />
+        </div>
       </section>
+      {notice.salvo && (
+        <AdminToast entity="produto" status={notice.status} publicHref={`/pecas/${p.slug}`} />
+      )}
     </>
   );
 }
