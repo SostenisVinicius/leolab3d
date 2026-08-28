@@ -1,6 +1,7 @@
 "use server";
 
 import { count, eq } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
@@ -23,25 +24,25 @@ export async function changeUserRole(formData: FormData) {
   if (session.user.id === userId && role !== "admin")
     throw new Error("Você não pode remover o próprio acesso.");
 
-  await db.transaction(async (tx) => {
-    const [target] = await tx.select().from(users).where(eq(users.id, userId)).limit(1);
-    if (!target) throw new Error("Usuário não encontrado.");
-    if (target.role === role) return;
-    if (target.role === "admin" && role === "customer") {
-      const [{ total }] = await tx
-        .select({ total: count() })
-        .from(users)
-        .where(eq(users.role, "admin"));
-      if (Number(total) <= 1) throw new Error("O último administrador não pode ser removido.");
-    }
-    await tx.update(users).set({ role, updatedAt: new Date() }).where(eq(users.id, userId));
-    await tx.insert(userRoleHistory).values({
+  const [target] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+  if (!target) throw new Error("Usuário não encontrado.");
+  if (target.role === role) return;
+  if (target.role === "admin" && role === "customer") {
+    const [{ total }] = await db
+      .select({ total: count() })
+      .from(users)
+      .where(eq(users.role, "admin"));
+    if (Number(total) <= 1) throw new Error("O último administrador não pode ser removido.");
+  }
+  await db.batch([
+    db.update(users).set({ role, updatedAt: new Date() }).where(eq(users.id, userId)),
+    db.insert(userRoleHistory).values({
       userId,
       previousRole: target.role,
       newRole: role,
       changedBy: session.user.id,
-    });
-  });
+    }),
+  ]);
   revalidatePath("/admin/equipe");
   revalidatePath("/admin");
 }
@@ -68,26 +69,30 @@ export async function updateQuote(formData: FormData) {
   const price = String(formData.get("price") ?? "");
   const days = String(formData.get("estimatedDays") ?? "");
   const note = String(formData.get("adminNotes") ?? "").trim();
-  await db.transaction(async (tx) => {
-    await tx
-      .update(quoteRequests)
-      .set({
-        status,
-        proposedPriceCents: price ? Math.round(Number(price.replace(",", ".")) * 100) : null,
-        estimatedDays: days ? Number(days) : null,
-        adminNotes: note || null,
-        updatedAt: new Date(),
-      })
-      .where(eq(quoteRequests.id, id));
-    if (current.status !== status)
-      await tx.insert(quoteStatusHistory).values({
+  const update = db
+    .update(quoteRequests)
+    .set({
+      status,
+      proposedPriceCents: price ? Math.round(Number(price.replace(",", ".")) * 100) : null,
+      estimatedDays: days ? Number(days) : null,
+      adminNotes: note || null,
+      updatedAt: new Date(),
+    })
+    .where(eq(quoteRequests.id, id));
+  if (current.status !== status) {
+    await db.batch([
+      update,
+      db.insert(quoteStatusHistory).values({
         quoteRequestId: id,
         fromStatus: current.status,
         toStatus: status,
         note: note || null,
         changedBy: session.user.id,
-      });
-  });
+      }),
+    ]);
+  } else {
+    await update;
+  }
   revalidatePath(`/admin/pedidos/${id}`);
   revalidatePath("/admin/pedidos");
   revalidatePath("/admin");
@@ -98,15 +103,36 @@ function optionalText(formData: FormData, key: string) {
   return value || null;
 }
 
-export async function saveProduct(formData: FormData) {
+export type AdminFormState = { success: boolean; message: string };
+
+function databaseErrorMessage(error: unknown, entity: "produto" | "coleção") {
+  const message = error instanceof Error ? error.message : String(error);
+  if (message.includes("unique") || message.includes("duplicate")) {
+    return `Já existe ${entity === "produto" ? "um produto" : "uma coleção"} com esse slug.`;
+  }
+  console.error(`Falha ao salvar ${entity}:`, error);
+  return `Não foi possível salvar ${entity === "produto" ? "o produto" : "a coleção"}. Tente novamente.`;
+}
+
+export async function saveProduct(
+  _state: AdminFormState,
+  formData: FormData,
+): Promise<AdminFormState> {
   await requireAdmin();
   const id = optionalText(formData, "id");
   const name = String(formData.get("name") ?? "").trim();
   const slug = String(formData.get("slug") ?? "").trim();
   const shortDescription = String(formData.get("shortDescription") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
-  if (!name || !slug || !shortDescription || !description)
-    throw new Error("Preencha os campos obrigatórios.");
+  if (!name || !slug || !shortDescription || !description) {
+    return { success: false, message: "Preencha nome, slug, resumo e descrição." };
+  }
+  if (!/^[a-z0-9-]+$/.test(slug)) {
+    return {
+      success: false,
+      message: "O slug deve conter apenas letras minúsculas, números e hífens.",
+    };
+  }
   const price = optionalText(formData, "startingPrice");
   const days = optionalText(formData, "estimatedDays");
   const values = {
@@ -125,36 +151,52 @@ export async function saveProduct(formData: FormData) {
     updatedAt: new Date(),
   };
   const collectionIds = formData.getAll("collectionIds").map(String);
-  const productId = await db.transaction(async (tx) => {
-    const savedId = id
-      ? (
-          await tx
-            .update(products)
-            .set(values)
-            .where(eq(products.id, id))
-            .returning({ id: products.id })
-        )[0].id
-      : (await tx.insert(products).values(values).returning({ id: products.id }))[0].id;
-    await tx.delete(productsToCollections).where(eq(productsToCollections.productId, savedId));
-    if (collectionIds.length)
-      await tx
-        .insert(productsToCollections)
-        .values(collectionIds.map((collectionId) => ({ productId: savedId, collectionId })));
-    return savedId;
-  });
+  const productId = id ?? randomUUID();
+  const save = id
+    ? db.update(products).set(values).where(eq(products.id, productId))
+    : db.insert(products).values({ id: productId, ...values });
+  const clearLinks = db
+    .delete(productsToCollections)
+    .where(eq(productsToCollections.productId, productId));
+  try {
+    if (collectionIds.length) {
+      await db.batch([
+        save,
+        clearLinks,
+        db
+          .insert(productsToCollections)
+          .values(collectionIds.map((collectionId) => ({ productId, collectionId }))),
+      ]);
+    } else {
+      await db.batch([save, clearLinks]);
+    }
+  } catch (error) {
+    return { success: false, message: databaseErrorMessage(error, "produto") };
+  }
   revalidatePath("/admin/produtos");
   revalidatePath("/catalogo");
   revalidatePath("/");
   redirect(`/admin/produtos/${productId}`);
 }
 
-export async function saveCollection(formData: FormData) {
+export async function saveCollection(
+  _state: AdminFormState,
+  formData: FormData,
+): Promise<AdminFormState> {
   await requireAdmin();
   const id = optionalText(formData, "id");
   const name = String(formData.get("name") ?? "").trim();
   const slug = String(formData.get("slug") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
-  if (!name || !slug || !description) throw new Error("Preencha os campos obrigatórios.");
+  if (!name || !slug || !description) {
+    return { success: false, message: "Preencha nome, slug e descrição." };
+  }
+  if (!/^[a-z0-9-]+$/.test(slug)) {
+    return {
+      success: false,
+      message: "O slug deve conter apenas letras minúsculas, números e hífens.",
+    };
+  }
   const values = {
     name,
     slug,
@@ -164,19 +206,30 @@ export async function saveCollection(formData: FormData) {
     updatedAt: new Date(),
   };
   const productIds = formData.getAll("productIds").map(String);
-  const savedSlug = await db.transaction(async (tx) => {
-    const saved = id
-      ? (await tx.update(collections).set(values).where(eq(collections.id, id)).returning())[0]
-      : (await tx.insert(collections).values(values).returning())[0];
-    await tx.delete(productsToCollections).where(eq(productsToCollections.collectionId, saved.id));
-    if (productIds.length)
-      await tx
-        .insert(productsToCollections)
-        .values(productIds.map((productId) => ({ productId, collectionId: saved.id })));
-    return saved.slug;
-  });
+  const collectionId = id ?? randomUUID();
+  const save = id
+    ? db.update(collections).set(values).where(eq(collections.id, collectionId))
+    : db.insert(collections).values({ id: collectionId, ...values });
+  const clearLinks = db
+    .delete(productsToCollections)
+    .where(eq(productsToCollections.collectionId, collectionId));
+  try {
+    if (productIds.length) {
+      await db.batch([
+        save,
+        clearLinks,
+        db
+          .insert(productsToCollections)
+          .values(productIds.map((productId) => ({ productId, collectionId }))),
+      ]);
+    } else {
+      await db.batch([save, clearLinks]);
+    }
+  } catch (error) {
+    return { success: false, message: databaseErrorMessage(error, "coleção") };
+  }
   revalidatePath("/admin/colecoes");
   revalidatePath("/colecoes");
   revalidatePath("/");
-  redirect(`/admin/colecoes/${savedSlug}`);
+  redirect(`/admin/colecoes/${slug}`);
 }

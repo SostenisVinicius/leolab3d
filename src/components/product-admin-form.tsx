@@ -1,5 +1,9 @@
-import { UploadCloud } from "lucide-react";
-import { saveProduct } from "@/app/actions/admin";
+"use client";
+
+import { saveProduct, type AdminFormState } from "@/app/actions/admin";
+import { AdminSubmitButton } from "@/components/admin-submit-button";
+import { ImageUpload } from "@/components/image-upload";
+import { useActionState } from "react";
 type ProductForm = {
   id: string;
   name: string;
@@ -24,8 +28,10 @@ export function ProductAdminForm({
   product?: ProductForm | null;
   collections: CollectionOption[];
 }) {
+  const initialState: AdminFormState = { success: false, message: "" };
+  const [state, action] = useActionState(saveProduct, initialState);
   return (
-    <form action={saveProduct} className="admin-form-layout">
+    <form action={action} className="admin-form-layout">
       {product && <input type="hidden" name="id" value={product.id} />}
       <div>
         <div className="data-card form-card">
@@ -87,27 +93,7 @@ export function ProductAdminForm({
       </div>
       <aside>
         <div className="data-card form-card">
-          <h2>Imagem de capa</h2>
-          <div className="upload-box">
-            {product?.coverUrl ? (
-              <div style={{ backgroundImage: `url(${product.coverUrl})` }} />
-            ) : (
-              <>
-                <UploadCloud />
-                <strong>Enviar imagem</strong>
-                <span>PNG, JPG ou WEBP · até 8 MB</span>
-              </>
-            )}
-          </div>
-          <label>
-            URL da imagem
-            <input
-              name="coverUrl"
-              type="url"
-              defaultValue={product?.coverUrl ?? ""}
-              placeholder="https://..."
-            />
-          </label>
+          <ImageUpload name="coverUrl" folder="products" initialUrl={product?.coverUrl} />
         </div>
         <div className="data-card form-card">
           <h2>Publicação</h2>
@@ -135,7 +121,8 @@ export function ProductAdminForm({
               {c.name}
             </label>
           ))}
-          <button className="button">Salvar produto</button>
+          {state.message && <p className="admin-form-message">{state.message}</p>}
+          <AdminSubmitButton>Salvar produto</AdminSubmitButton>
         </div>
       </aside>
     </form>

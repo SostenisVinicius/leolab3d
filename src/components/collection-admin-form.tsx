@@ -1,5 +1,9 @@
-import { UploadCloud } from "lucide-react";
-import { saveCollection } from "@/app/actions/admin";
+"use client";
+
+import { saveCollection, type AdminFormState } from "@/app/actions/admin";
+import { AdminSubmitButton } from "@/components/admin-submit-button";
+import { ImageUpload } from "@/components/image-upload";
+import { useActionState } from "react";
 type CollectionForm = {
   id: string;
   name: string;
@@ -17,8 +21,10 @@ export function CollectionAdminForm({
   collection?: CollectionForm | null;
   products: ProductOption[];
 }) {
+  const initialState: AdminFormState = { success: false, message: "" };
+  const [state, action] = useActionState(saveCollection, initialState);
   return (
-    <form action={saveCollection} className="admin-form-layout">
+    <form action={action} className="admin-form-layout">
       {collection && <input type="hidden" name="id" value={collection.id} />}
       <div className="data-card form-card">
         <h2>Dados da coleção</h2>
@@ -50,26 +56,12 @@ export function CollectionAdminForm({
       </div>
       <aside>
         <div className="data-card form-card">
-          <h2>Capa</h2>
-          <div className="upload-box">
-            {collection?.coverUrl ? (
-              <div style={{ backgroundImage: `url(${collection.coverUrl})` }} />
-            ) : (
-              <>
-                <UploadCloud />
-                <strong>Enviar imagem</strong>
-              </>
-            )}
-          </div>
-          <label>
-            URL da imagem
-            <input
-              name="coverUrl"
-              type="url"
-              defaultValue={collection?.coverUrl ?? ""}
-              placeholder="https://..."
-            />
-          </label>
+          <ImageUpload
+            name="coverUrl"
+            folder="collections"
+            initialUrl={collection?.coverUrl}
+            label="Capa da coleção"
+          />
           <label>
             Status
             <select name="status" defaultValue={collection?.status ?? "draft"}>
@@ -78,7 +70,8 @@ export function CollectionAdminForm({
               <option value="archived">Arquivada</option>
             </select>
           </label>
-          <button className="button">Salvar coleção</button>
+          {state.message && <p className="admin-form-message">{state.message}</p>}
+          <AdminSubmitButton>Salvar coleção</AdminSubmitButton>
         </div>
       </aside>
     </form>

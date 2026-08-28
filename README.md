@@ -12,6 +12,8 @@ Catálogo e central de orçamentos para peças 3D personalizadas. Usa Next.js Ap
 - Produtos podem participar de várias coleções.
 - Autenticação por e-mail/senha e autorização por papel.
 - Upload autenticado para Vercel Blob (imagens de até 8 MB).
+- Upload por clique ou arrastar e soltar com preview e progresso.
+- CRUD administrativo real de produtos e coleções no Neon.
 - Modo demonstração automático sem `DATABASE_URL`.
 
 ## Configuração local
@@ -53,4 +55,4 @@ Se for necessário recuperar a senha do primeiro administrador, defina `ADMIN_EM
 
 ## Modo demo
 
-Sem `DATABASE_URL`, o catálogo público usa conteúdo demonstrativo. Com Neon configurado, autenticação, orçamentos, dashboard administrativo, pedidos, produtos, coleções e equipe usam PostgreSQL.
+Sem `DATABASE_URL`, o catálogo público usa conteúdo demonstrativo. Com Neon configurado, autenticação, orçamentos, dashboard administrativo, pedidos, produtos, coleções e equipe usam PostgreSQL. As ações compostas usam lotes atômicos compatíveis com o driver Neon HTTP.
