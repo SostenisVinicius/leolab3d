@@ -1,6 +1,13 @@
 import { and, asc, count, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { collections, products, productsToCollections, quoteRequests, users } from "@/db/schema";
+import {
+  collections,
+  productImages,
+  products,
+  productsToCollections,
+  quoteRequests,
+  users,
+} from "@/db/schema";
 
 export async function getAdminDashboard() {
   const [quoteCounts, catalogCounts, userCounts, recentQuotes] = await Promise.all([
@@ -99,11 +106,18 @@ export async function getAdminCollections() {
 export async function getProductWithCollections(id: string) {
   const product = await db.query.products.findFirst({ where: eq(products.id, id) });
   if (!product) return null;
-  const links = await db
-    .select({ collectionId: productsToCollections.collectionId })
-    .from(productsToCollections)
-    .where(eq(productsToCollections.productId, id));
-  return { ...product, collectionIds: links.map((link) => link.collectionId) };
+  const [links, images] = await Promise.all([
+    db
+      .select({ collectionId: productsToCollections.collectionId })
+      .from(productsToCollections)
+      .where(eq(productsToCollections.productId, id)),
+    db
+      .select({ url: productImages.url, alt: productImages.alt })
+      .from(productImages)
+      .where(eq(productImages.productId, id))
+      .orderBy(asc(productImages.displayOrder)),
+  ]);
+  return { ...product, collectionIds: links.map((link) => link.collectionId), images };
 }
 
 export async function getCollectionWithProducts(slug: string) {

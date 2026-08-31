@@ -244,6 +244,9 @@ export const productsRelations = relations(products, ({ many }) => ({
   images: many(productImages),
   collections: many(productsToCollections),
 }));
+export const productImagesRelations = relations(productImages, ({ one }) => ({
+  product: one(products, { fields: [productImages.productId], references: [products.id] }),
+}));
 export const collectionsRelations = relations(collections, ({ many }) => ({
   products: many(productsToCollections),
 }));
@@ -266,6 +269,12 @@ export const quoteRequestItemsRelations = relations(quoteRequestItems, ({ one })
     references: [quoteRequests.id],
   }),
   product: one(products, { fields: [quoteRequestItems.productId], references: [products.id] }),
+}));
+export const quoteAttachmentsRelations = relations(quoteAttachments, ({ one }) => ({
+  quote: one(quoteRequests, {
+    fields: [quoteAttachments.quoteRequestId],
+    references: [quoteRequests.id],
+  }),
 }));
 export const quoteStatusHistoryRelations = relations(quoteStatusHistory, ({ one }) => ({
   quote: one(quoteRequests, {

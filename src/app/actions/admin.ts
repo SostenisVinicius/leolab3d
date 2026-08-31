@@ -1,11 +1,15 @@
 "use server";
 
 import { count, eq } from "drizzle-orm";
+import type { BatchItem } from "drizzle-orm/batch";
+import { randomUUID } from "node:crypto";
+import { del } from "@vercel/blob";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
 import {
   collections,
+  productImages,
   products,
   productsToCollections,
   quoteRequests,
@@ -13,6 +17,8 @@ import {
   userRoleHistory,
   users,
 } from "@/db/schema";
+import { isManagedBlobUrl } from "@/lib/image-upload";
+import { findOrphanImages, normalizeGallery } from "@/lib/product-gallery";
 import { requireAdmin } from "@/lib/session";
 
 export async function changeUserRole(formData: FormData) {
@@ -23,25 +29,25 @@ export async function changeUserRole(formData: FormData) {
   if (session.user.id === userId && role !== "admin")
     throw new Error("Você não pode remover o próprio acesso.");
 
-  await db.transaction(async (tx) => {
-    const [target] = await tx.select().from(users).where(eq(users.id, userId)).limit(1);
-    if (!target) throw new Error("Usuário não encontrado.");
-    if (target.role === role) return;
-    if (target.role === "admin" && role === "customer") {
-      const [{ total }] = await tx
-        .select({ total: count() })
-        .from(users)
-        .where(eq(users.role, "admin"));
-      if (Number(total) <= 1) throw new Error("O último administrador não pode ser removido.");
-    }
-    await tx.update(users).set({ role, updatedAt: new Date() }).where(eq(users.id, userId));
-    await tx.insert(userRoleHistory).values({
+  const [target] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+  if (!target) throw new Error("Usuário não encontrado.");
+  if (target.role === role) return;
+  if (target.role === "admin" && role === "customer") {
+    const [{ total }] = await db
+      .select({ total: count() })
+      .from(users)
+      .where(eq(users.role, "admin"));
+    if (Number(total) <= 1) throw new Error("O último administrador não pode ser removido.");
+  }
+  await db.batch([
+    db.update(users).set({ role, updatedAt: new Date() }).where(eq(users.id, userId)),
+    db.insert(userRoleHistory).values({
       userId,
       previousRole: target.role,
       newRole: role,
       changedBy: session.user.id,
-    });
-  });
+    }),
+  ]);
   revalidatePath("/admin/equipe");
   revalidatePath("/admin");
 }
@@ -65,29 +71,33 @@ export async function updateQuote(formData: FormData) {
   const status = requestedStatus as (typeof valid)[number];
   const [current] = await db.select().from(quoteRequests).where(eq(quoteRequests.id, id)).limit(1);
   if (!current) throw new Error("Pedido não encontrado.");
-  const price = String(formData.get("price") ?? "");
+  const priceCents = optionalInteger(formData, "proposedPriceCents");
   const days = String(formData.get("estimatedDays") ?? "");
   const note = String(formData.get("adminNotes") ?? "").trim();
-  await db.transaction(async (tx) => {
-    await tx
-      .update(quoteRequests)
-      .set({
-        status,
-        proposedPriceCents: price ? Math.round(Number(price.replace(",", ".")) * 100) : null,
-        estimatedDays: days ? Number(days) : null,
-        adminNotes: note || null,
-        updatedAt: new Date(),
-      })
-      .where(eq(quoteRequests.id, id));
-    if (current.status !== status)
-      await tx.insert(quoteStatusHistory).values({
+  const update = db
+    .update(quoteRequests)
+    .set({
+      status,
+      proposedPriceCents: priceCents,
+      estimatedDays: days ? Number(days) : null,
+      adminNotes: note || null,
+      updatedAt: new Date(),
+    })
+    .where(eq(quoteRequests.id, id));
+  if (current.status !== status) {
+    await db.batch([
+      update,
+      db.insert(quoteStatusHistory).values({
         quoteRequestId: id,
         fromStatus: current.status,
         toStatus: status,
         note: note || null,
         changedBy: session.user.id,
-      });
-  });
+      }),
+    ]);
+  } else {
+    await update;
+  }
   revalidatePath(`/admin/pedidos/${id}`);
   revalidatePath("/admin/pedidos");
   revalidatePath("/admin");
@@ -98,16 +108,56 @@ function optionalText(formData: FormData, key: string) {
   return value || null;
 }
 
-export async function saveProduct(formData: FormData) {
+function optionalInteger(formData: FormData, key: string) {
+  const value = optionalText(formData, key);
+  if (value == null) return null;
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number >= 0 ? number : null;
+}
+
+export type AdminFormState = { success: boolean; message: string };
+
+function databaseErrorMessage(error: unknown, entity: "produto" | "coleção") {
+  const message = error instanceof Error ? error.message : String(error);
+  if (message.includes("unique") || message.includes("duplicate")) {
+    return `Já existe ${entity === "produto" ? "um produto" : "uma coleção"} com esse slug.`;
+  }
+  console.error(`Falha ao salvar ${entity}:`, error);
+  return `Não foi possível salvar ${entity === "produto" ? "o produto" : "a coleção"}. Tente novamente.`;
+}
+
+/** Capa e galeria já gravadas para um produto, usadas para detectar imagens descartadas. */
+async function currentProductImageUrls(productId: string) {
+  const [existing, gallery] = await Promise.all([
+    db.select({ coverUrl: products.coverUrl }).from(products).where(eq(products.id, productId)),
+    db
+      .select({ url: productImages.url })
+      .from(productImages)
+      .where(eq(productImages.productId, productId)),
+  ]);
+  return [existing[0]?.coverUrl ?? null, ...gallery.map((image) => image.url)];
+}
+
+export async function saveProduct(
+  _state: AdminFormState,
+  formData: FormData,
+): Promise<AdminFormState> {
   await requireAdmin();
   const id = optionalText(formData, "id");
   const name = String(formData.get("name") ?? "").trim();
   const slug = String(formData.get("slug") ?? "").trim();
   const shortDescription = String(formData.get("shortDescription") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
-  if (!name || !slug || !shortDescription || !description)
-    throw new Error("Preencha os campos obrigatórios.");
-  const price = optionalText(formData, "startingPrice");
+  if (!name || !slug || !shortDescription || !description) {
+    return { success: false, message: "Preencha nome, slug, resumo e descrição." };
+  }
+  if (!/^[a-z0-9-]+$/.test(slug)) {
+    return {
+      success: false,
+      message: "O slug deve conter apenas letras minúsculas, números e hífens.",
+    };
+  }
+  const priceCents = optionalInteger(formData, "startingPriceCents");
   const days = optionalText(formData, "estimatedDays");
   const values = {
     name,
@@ -119,42 +169,75 @@ export async function saveProduct(formData: FormData) {
     dimensions: optionalText(formData, "dimensions"),
     finish: optionalText(formData, "finish"),
     estimatedDays: days ? Number(days) : null,
-    startingPriceCents: price ? Math.round(Number(price.replace(",", ".")) * 100) : null,
+    startingPriceCents: priceCents,
     status: String(formData.get("status") ?? "draft") as "draft" | "published" | "archived",
     featured: formData.get("featured") === "on",
     updatedAt: new Date(),
   };
   const collectionIds = formData.getAll("collectionIds").map(String);
-  const productId = await db.transaction(async (tx) => {
-    const savedId = id
-      ? (
-          await tx
-            .update(products)
-            .set(values)
-            .where(eq(products.id, id))
-            .returning({ id: products.id })
-        )[0].id
-      : (await tx.insert(products).values(values).returning({ id: products.id }))[0].id;
-    await tx.delete(productsToCollections).where(eq(productsToCollections.productId, savedId));
-    if (collectionIds.length)
-      await tx
-        .insert(productsToCollections)
-        .values(collectionIds.map((collectionId) => ({ productId: savedId, collectionId })));
-    return savedId;
+  const productId = id ?? randomUUID();
+  const gallery = normalizeGallery({
+    urls: formData.getAll("galleryUrl").map(String),
+    alts: formData.getAll("galleryAlt").map(String),
+    fallbackAlt: name,
   });
+
+  // Guarda as imagens atuais para limpar do Blob as que forem descartadas neste salvamento.
+  const previousImages = id ? await currentProductImageUrls(productId) : [];
+
+  const statements: Array<BatchItem<"pg">> = [
+    id
+      ? db.update(products).set(values).where(eq(products.id, productId))
+      : db.insert(products).values({ id: productId, ...values }),
+    db.delete(productsToCollections).where(eq(productsToCollections.productId, productId)),
+    db.delete(productImages).where(eq(productImages.productId, productId)),
+  ];
+  if (collectionIds.length) {
+    statements.push(
+      db
+        .insert(productsToCollections)
+        .values(collectionIds.map((collectionId) => ({ productId, collectionId }))),
+    );
+  }
+  if (gallery.length) {
+    statements.push(
+      db.insert(productImages).values(gallery.map((image) => ({ ...image, productId }))),
+    );
+  }
+  try {
+    await db.batch(statements as [BatchItem<"pg">, ...Array<BatchItem<"pg">>]);
+  } catch (error) {
+    return { success: false, message: databaseErrorMessage(error, "produto") };
+  }
+  await deleteOwnedBlobs(
+    findOrphanImages(previousImages, [values.coverUrl, ...gallery.map((image) => image.url)]),
+  );
   revalidatePath("/admin/produtos");
   revalidatePath("/catalogo");
+  revalidatePath("/colecoes");
+  revalidatePath(`/pecas/${slug}`);
   revalidatePath("/");
-  redirect(`/admin/produtos/${productId}`);
+  redirect(`/admin/produtos/${productId}?salvo=1&status=${values.status}`);
 }
 
-export async function saveCollection(formData: FormData) {
+export async function saveCollection(
+  _state: AdminFormState,
+  formData: FormData,
+): Promise<AdminFormState> {
   await requireAdmin();
   const id = optionalText(formData, "id");
   const name = String(formData.get("name") ?? "").trim();
   const slug = String(formData.get("slug") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
-  if (!name || !slug || !description) throw new Error("Preencha os campos obrigatórios.");
+  if (!name || !slug || !description) {
+    return { success: false, message: "Preencha nome, slug e descrição." };
+  }
+  if (!/^[a-z0-9-]+$/.test(slug)) {
+    return {
+      success: false,
+      message: "O slug deve conter apenas letras minúsculas, números e hífens.",
+    };
+  }
   const values = {
     name,
     slug,
@@ -164,19 +247,76 @@ export async function saveCollection(formData: FormData) {
     updatedAt: new Date(),
   };
   const productIds = formData.getAll("productIds").map(String);
-  const savedSlug = await db.transaction(async (tx) => {
-    const saved = id
-      ? (await tx.update(collections).set(values).where(eq(collections.id, id)).returning())[0]
-      : (await tx.insert(collections).values(values).returning())[0];
-    await tx.delete(productsToCollections).where(eq(productsToCollections.collectionId, saved.id));
-    if (productIds.length)
-      await tx
-        .insert(productsToCollections)
-        .values(productIds.map((productId) => ({ productId, collectionId: saved.id })));
-    return saved.slug;
-  });
+  const collectionId = id ?? randomUUID();
+  const save = id
+    ? db.update(collections).set(values).where(eq(collections.id, collectionId))
+    : db.insert(collections).values({ id: collectionId, ...values });
+  const clearLinks = db
+    .delete(productsToCollections)
+    .where(eq(productsToCollections.collectionId, collectionId));
+  try {
+    if (productIds.length) {
+      await db.batch([
+        save,
+        clearLinks,
+        db
+          .insert(productsToCollections)
+          .values(productIds.map((productId) => ({ productId, collectionId }))),
+      ]);
+    } else {
+      await db.batch([save, clearLinks]);
+    }
+  } catch (error) {
+    return { success: false, message: databaseErrorMessage(error, "coleção") };
+  }
   revalidatePath("/admin/colecoes");
   revalidatePath("/colecoes");
+  revalidatePath(`/colecoes/${slug}`);
   revalidatePath("/");
-  redirect(`/admin/colecoes/${savedSlug}`);
+  redirect(`/admin/colecoes/${slug}?salvo=1&status=${values.status}`);
+}
+
+/** Remove imagens hospedadas no Blob da aplicação. Falhas são registradas e não bloqueiam a exclusão. */
+async function deleteOwnedBlobs(urls: Array<string | null>) {
+  const managed = [...new Set(urls.filter(isManagedBlobUrl))] as string[];
+  if (!managed.length) return;
+  try {
+    await del(managed);
+  } catch (error) {
+    console.error("Não foi possível remover imagens do Blob:", error);
+  }
+}
+
+export async function deleteProduct(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id") ?? "");
+  const [product] = await db.select().from(products).where(eq(products.id, id)).limit(1);
+  if (!product) throw new Error("Produto não encontrado.");
+  const gallery = await db
+    .select({ url: productImages.url })
+    .from(productImages)
+    .where(eq(productImages.productId, id));
+  await db.delete(products).where(eq(products.id, id));
+  await deleteOwnedBlobs([product.coverUrl, ...gallery.map((image) => image.url)]);
+  revalidatePath("/");
+  revalidatePath("/catalogo");
+  revalidatePath("/colecoes");
+  revalidatePath(`/pecas/${product.slug}`);
+  revalidatePath("/admin/produtos");
+  redirect("/admin/produtos?excluido=1");
+}
+
+export async function deleteCollection(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id") ?? "");
+  const [collection] = await db.select().from(collections).where(eq(collections.id, id)).limit(1);
+  if (!collection) throw new Error("Coleção não encontrada.");
+  await db.delete(collections).where(eq(collections.id, id));
+  await deleteOwnedBlobs([collection.coverUrl]);
+  revalidatePath("/");
+  revalidatePath("/catalogo");
+  revalidatePath("/colecoes");
+  revalidatePath(`/colecoes/${collection.slug}`);
+  revalidatePath("/admin/colecoes");
+  redirect("/admin/colecoes?excluida=1");
 }

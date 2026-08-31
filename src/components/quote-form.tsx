@@ -1,8 +1,9 @@
 "use client";
 
-import { useActionState } from "react";
-import { ArrowRight, CheckCircle2, LoaderCircle, Paperclip } from "lucide-react";
+import { useActionState, useState } from "react";
+import { ArrowRight, CheckCircle2, LoaderCircle } from "lucide-react";
 import { createQuote } from "@/app/actions/quotes";
+import { QuoteAttachmentsUpload } from "@/components/quote-attachments-upload";
 import type { QuoteState } from "@/lib/validators";
 
 const initial: QuoteState = { success: false, message: "" };
@@ -11,6 +12,9 @@ const FieldError = ({ name, errors }: { name: string; errors?: Record<string, st
 
 export function QuoteForm({ product }: { product?: { id: string; name: string } }) {
   const [state, action, pending] = useActionState(createQuote, initial);
+  const [phone, setPhone] = useState("");
+  const isCatalog = Boolean(product);
+
   if (state.success)
     return (
       <div className="success-panel">
@@ -26,8 +30,10 @@ export function QuoteForm({ product }: { product?: { id: string; name: string } 
         </a>
       </div>
     );
+
   return (
     <form action={action} className="quote-form">
+      <input type="hidden" name="kind" value={isCatalog ? "catalog" : "custom"} />
       {product && (
         <div className="selected-product">
           <span>Peça selecionada</span>
@@ -36,6 +42,7 @@ export function QuoteForm({ product }: { product?: { id: string; name: string } 
           <input type="hidden" name="productName" value={product.name} />
         </div>
       )}
+
       <div className="form-section">
         <div className="form-section-title">
           <b>01</b>
@@ -57,55 +64,74 @@ export function QuoteForm({ product }: { product?: { id: string; name: string } 
           </label>
           <label className="full">
             WhatsApp
-            <input name="phone" placeholder="(11) 99999-9999" />
+            <input
+              name="phone"
+              value={phone}
+              onChange={(event) => setPhone(event.target.value)}
+              placeholder="(11) 99999-9999"
+            />
             <FieldError name="phone" errors={state.errors} />
           </label>
         </div>
       </div>
+
       <div className="form-section">
         <div className="form-section-title">
           <b>02</b>
           <div>
-            <h3>Sua ideia</h3>
-            <p>Quanto mais detalhes, melhor a análise.</p>
+            <h3>{isCatalog ? "Sobre o pedido" : "Sua ideia"}</h3>
+            <p>
+              {isCatalog
+                ? "Já sabemos qual é a peça. Só precisamos dos detalhes do seu pedido."
+                : "Quanto mais detalhes, melhor a análise."}
+            </p>
           </div>
         </div>
         <div className="form-grid">
-          <label className="full">
-            Nome do projeto
-            <input
-              name="title"
-              defaultValue={product?.name ?? ""}
-              placeholder="Ex.: miniatura personalizada"
-            />
-            <FieldError name="title" errors={state.errors} />
-          </label>
+          {!isCatalog && (
+            <label className="full">
+              Nome do projeto
+              <input name="title" placeholder="Ex.: miniatura personalizada" />
+              <FieldError name="title" errors={state.errors} />
+            </label>
+          )}
           <label>
             Quantidade
             <input name="quantity" type="number" min="1" defaultValue="1" />
+            <FieldError name="quantity" errors={state.errors} />
           </label>
           <label>
             Data desejada <span>(opcional)</span>
             <input name="desiredDate" type="date" />
           </label>
-          <label className="full">
-            Descreva a peça
-            <textarea
-              name="description"
-              rows={6}
-              placeholder="Conte sobre tamanho, estilo, cores, uso e detalhes importantes..."
-            />
-            <FieldError name="description" errors={state.errors} />
-          </label>
-          <div className="full upload-placeholder">
-            <Paperclip />
-            <div>
-              <strong>Referências visuais</strong>
-              <span>Uploads serão habilitados ao conectar o Vercel Blob.</span>
-            </div>
-          </div>
+
+          {isCatalog ? (
+            <label className="full">
+              Observações <span>(opcional)</span>
+              <textarea
+                name="notes"
+                rows={5}
+                placeholder="Cor, acabamento, personalização ou qualquer detalhe importante..."
+              />
+              <FieldError name="notes" errors={state.errors} />
+            </label>
+          ) : (
+            <>
+              <label className="full">
+                Descreva a peça
+                <textarea
+                  name="description"
+                  rows={6}
+                  placeholder="Conte sobre tamanho, estilo, cores, uso e detalhes importantes..."
+                />
+                <FieldError name="description" errors={state.errors} />
+              </label>
+              <QuoteAttachmentsUpload phone={phone} />
+            </>
+          )}
         </div>
       </div>
+
       {state.message && <p className="form-message">{state.message}</p>}
       <button className="button submit-button" disabled={pending}>
         {pending ? (

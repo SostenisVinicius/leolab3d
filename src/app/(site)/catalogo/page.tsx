@@ -1,21 +1,25 @@
 import { Search } from "lucide-react";
 import { ProductCard } from "@/components/product-card";
-import { products } from "@/lib/demo-data";
+import { getPublishedCollections, getPublishedProducts } from "@/lib/public-data";
 
 export const metadata = { title: "Catálogo | LeoLab3D" };
 export default async function CatalogPage({
   searchParams,
 }: {
-  searchParams: Promise<{ busca?: string; categoria?: string }>;
+  searchParams: Promise<{ busca?: string; colecao?: string }>;
 }) {
   const query = await searchParams;
-  const term = query.busca?.toLowerCase() ?? "";
-  const filtered = products.filter(
-    (p) =>
-      (!term || `${p.name} ${p.shortDescription}`.toLowerCase().includes(term)) &&
-      (!query.categoria || p.category === query.categoria),
-  );
-  const categories = [...new Set(products.map((p) => p.category))];
+  const [filtered, collectionOptions] = await Promise.all([
+    getPublishedProducts({ search: query.busca, collectionSlug: query.colecao }),
+    getPublishedCollections(),
+  ]);
+  const catalogHref = (colecao?: string) => {
+    const params = new URLSearchParams();
+    if (query.busca) params.set("busca", query.busca);
+    if (colecao) params.set("colecao", colecao);
+    const search = params.toString();
+    return search ? `/catalogo?${search}` : "/catalogo";
+  };
   return (
     <>
       <section className="page-hero">
@@ -35,21 +39,22 @@ export default async function CatalogPage({
       <section className="section catalog-section">
         <div className="container">
           <form className="catalog-tools">
+            {query.colecao && <input type="hidden" name="colecao" value={query.colecao} />}
             <label>
               <Search />
               <input name="busca" defaultValue={query.busca} placeholder="Buscar uma peça..." />
             </label>
             <div className="filter-pills">
-              <a href="/catalogo" className={!query.categoria ? "active" : ""}>
+              <a href={catalogHref()} className={!query.colecao ? "active" : ""}>
                 Todas
               </a>
-              {categories.map((c) => (
+              {collectionOptions.map((c) => (
                 <a
-                  key={c}
-                  className={query.categoria === c ? "active" : ""}
-                  href={`/catalogo?categoria=${encodeURIComponent(c)}`}
+                  key={c.id}
+                  className={query.colecao === c.slug ? "active" : ""}
+                  href={catalogHref(c.slug)}
                 >
-                  {c}
+                  {c.name}
                 </a>
               ))}
             </div>

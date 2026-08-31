@@ -3,6 +3,18 @@ export function formatCurrency(cents?: number | null) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cents / 100);
 }
 
+export function formatCurrencyInput(cents?: number | null) {
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
+    (cents ?? 0) / 100,
+  );
+}
+
+export function parseCurrencyInput(value?: string | null) {
+  if (!value?.trim()) return null;
+  const digits = value.replace(/\D/g, "");
+  return digits ? Number(digits) : 0;
+}
+
 export function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
 }

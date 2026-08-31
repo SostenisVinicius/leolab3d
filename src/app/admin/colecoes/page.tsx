@@ -1,9 +1,14 @@
 import Link from "next/link";
 import { ArrowRight, FolderKanban, ImageIcon, Plus } from "lucide-react";
 import { getAdminCollections } from "@/lib/admin-data";
+import { AdminToast } from "@/components/admin-toast";
 
-export default async function AdminCollections() {
-  const rows = await getAdminCollections();
+export default async function AdminCollections({
+  searchParams,
+}: {
+  searchParams: Promise<{ excluida?: string }>;
+}) {
+  const [rows, notice] = await Promise.all([getAdminCollections(), searchParams]);
   return (
     <>
       <header className="admin-header">
@@ -61,6 +66,7 @@ export default async function AdminCollections() {
           </div>
         )}
       </section>
+      {notice.excluida && <AdminToast entity="coleção" deleted />}
     </>
   );
 }

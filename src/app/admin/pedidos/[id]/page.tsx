@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { updateQuote } from "@/app/actions/admin";
 import { getAdminQuote } from "@/lib/admin-data";
 import { formatCurrency, statusLabels } from "@/lib/utils";
+import { CurrencyInput } from "@/components/currency-input";
 
 export default async function AdminOrder({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -126,13 +127,7 @@ export default async function AdminOrder({ params }: { params: Promise<{ id: str
             </label>
             <label>
               Valor proposto (R$)
-              <input
-                name="price"
-                type="number"
-                min="0"
-                step="0.01"
-                defaultValue={q.proposedPriceCents ? q.proposedPriceCents / 100 : ""}
-              />
+              <CurrencyInput name="proposedPriceCents" initialCents={q.proposedPriceCents} />
             </label>
             <label>
               Prazo estimado (dias)

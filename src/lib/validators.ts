@@ -1,19 +1,34 @@
 import { z } from "zod";
 
-export const quoteSchema = z.object({
+const contactFields = {
   name: z.string().trim().min(3, "Informe seu nome completo."),
   email: z.email("Informe um e-mail válido."),
-  phone: z.string().trim().min(10, "Informe um telefone com DDD."),
+  phone: z.string().trim().min(10, "Informe um WhatsApp com DDD."),
+  quantity: z.coerce.number().int().min(1).max(100),
+  desiredDate: z.string().optional(),
+};
+
+/** Peça já cadastrada: a descrição vem do produto, então só pedimos contato e observações. */
+export const catalogQuoteSchema = z.object({
+  kind: z.literal("catalog"),
+  ...contactFields,
+  productId: z.string().trim().min(1, "Peça não identificada."),
+  productName: z.string().trim().min(1, "Peça não identificada."),
+  notes: z.string().trim().max(2000, "Use no máximo 2000 caracteres.").optional(),
+});
+
+/** Projeto personalizado: precisamos que a pessoa descreva a peça. */
+export const customQuoteSchema = z.object({
+  kind: z.literal("custom"),
+  ...contactFields,
   title: z.string().trim().min(3, "Dê um nome ao projeto."),
   description: z
     .string()
     .trim()
     .min(20, "Conte um pouco mais sobre a peça (mínimo de 20 caracteres)."),
-  quantity: z.coerce.number().int().min(1).max(100),
-  productId: z.string().optional(),
-  productName: z.string().optional(),
-  desiredDate: z.string().optional(),
 });
+
+export const quoteSchema = z.discriminatedUnion("kind", [catalogQuoteSchema, customQuoteSchema]);
 
 export const productSchema = z.object({
   name: z.string().trim().min(3),

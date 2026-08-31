@@ -1,22 +1,24 @@
 import { notFound } from "next/navigation";
 import { ProductCard } from "@/components/product-card";
-import { collections, products } from "@/lib/demo-data";
+import { getPublishedCollection } from "@/lib/public-data";
 
 export default async function CollectionPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const collection = collections.find((c) => c.slug === slug);
+  const collection = await getPublishedCollection(slug);
   if (!collection) notFound();
-  const items = products.filter((p) => collection.productSlugs.includes(p.slug));
+  const items = collection.products;
   return (
     <>
       <section
         className="collection-hero"
         style={{
-          backgroundImage: `linear-gradient(90deg, rgba(2,16,27,.98), rgba(2,16,27,.36)), url(${collection.image})`,
+          backgroundImage: collection.image
+            ? `linear-gradient(90deg, rgba(2,16,27,.98), rgba(2,16,27,.36)), url(${collection.image})`
+            : "linear-gradient(120deg, #03121d, #07516b)",
         }}
       >
         <div className="container">
-          <span className="kicker">{collection.eyebrow}</span>
+          <span className="kicker">Coleção LeoLab3D</span>
           <h1>{collection.name}</h1>
           <p>{collection.description}</p>
         </div>
