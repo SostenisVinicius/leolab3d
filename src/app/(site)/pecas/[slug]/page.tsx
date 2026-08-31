@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowRight, Box, Clock3, Paintbrush, Ruler } from "lucide-react";
 import { notFound } from "next/navigation";
+import { ProductGallery } from "@/components/product-gallery";
 import { getPublishedProduct } from "@/lib/public-data";
 import { formatCurrency } from "@/lib/utils";
 
@@ -8,15 +9,15 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   const { slug } = await params;
   const p = await getPublishedProduct(slug);
   if (!p) notFound();
+  const tag = p.material ?? "Peça 3D";
+  const photos = [
+    ...(p.image ? [{ url: p.image, alt: p.name }] : []),
+    ...p.gallery.filter((photo) => photo.url !== p.image),
+  ];
   return (
     <section className="section product-page">
       <div className="container product-detail">
-        <div
-          className="detail-image"
-          style={{ backgroundImage: p.image ? `url(${p.image})` : undefined }}
-        >
-          <span>{p.material ?? "Peça 3D"}</span>
-        </div>
+        <ProductGallery photos={photos} tag={tag} />
         <div className="detail-copy">
           <div className="breadcrumbs">
             <Link href="/catalogo">Catálogo</Link> / {p.name}

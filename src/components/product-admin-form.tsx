@@ -3,6 +3,7 @@
 import { saveProduct, type AdminFormState } from "@/app/actions/admin";
 import { AdminSubmitButton } from "@/components/admin-submit-button";
 import { ImageUpload } from "@/components/image-upload";
+import { ProductGalleryUpload } from "@/components/product-gallery-upload";
 import { CurrencyInput } from "@/components/currency-input";
 import { useActionState } from "react";
 type ProductForm = {
@@ -20,6 +21,7 @@ type ProductForm = {
   status: "draft" | "published" | "archived";
   featured: boolean;
   collectionIds: string[];
+  images: Array<{ url: string; alt: string }>;
 };
 type CollectionOption = { id: string; name: string };
 export function ProductAdminForm({
@@ -87,6 +89,7 @@ export function ProductAdminForm({
       <aside>
         <div className="data-card form-card">
           <ImageUpload name="coverUrl" folder="products" initialUrl={product?.coverUrl} />
+          <ProductGalleryUpload initialImages={product?.images} />
         </div>
         <div className="data-card form-card">
           <h2>Publicação</h2>

@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, ilike, or } from "drizzle-orm";
 import { db } from "@/db";
-import { collections, products, productsToCollections } from "@/db/schema";
+import { collections, productImages, products, productsToCollections } from "@/db/schema";
 
 export type PublicProduct = {
   id: string;
@@ -96,7 +96,13 @@ export async function getPublishedProduct(slug: string) {
     .from(products)
     .where(publishedProductFilters({ slug }))
     .limit(1);
-  return product ?? null;
+  if (!product) return null;
+  const gallery = await db
+    .select({ url: productImages.url, alt: productImages.alt })
+    .from(productImages)
+    .where(eq(productImages.productId, product.id))
+    .orderBy(asc(productImages.displayOrder));
+  return { ...product, gallery };
 }
 
 export async function getPublishedCollections(limit?: number) {

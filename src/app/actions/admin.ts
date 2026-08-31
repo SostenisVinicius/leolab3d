@@ -1,6 +1,7 @@
 "use server";
 
 import { count, eq } from "drizzle-orm";
+import type { BatchItem } from "drizzle-orm/batch";
 import { randomUUID } from "node:crypto";
 import { del } from "@vercel/blob";
 import { revalidatePath } from "next/cache";
@@ -17,6 +18,7 @@ import {
   users,
 } from "@/db/schema";
 import { isManagedBlobUrl } from "@/lib/image-upload";
+import { findOrphanImages, normalizeGallery } from "@/lib/product-gallery";
 import { requireAdmin } from "@/lib/session";
 
 export async function changeUserRole(formData: FormData) {
@@ -124,6 +126,18 @@ function databaseErrorMessage(error: unknown, entity: "produto" | "coleção") {
   return `Não foi possível salvar ${entity === "produto" ? "o produto" : "a coleção"}. Tente novamente.`;
 }
 
+/** Capa e galeria já gravadas para um produto, usadas para detectar imagens descartadas. */
+async function currentProductImageUrls(productId: string) {
+  const [existing, gallery] = await Promise.all([
+    db.select({ coverUrl: products.coverUrl }).from(products).where(eq(products.id, productId)),
+    db
+      .select({ url: productImages.url })
+      .from(productImages)
+      .where(eq(productImages.productId, productId)),
+  ]);
+  return [existing[0]?.coverUrl ?? null, ...gallery.map((image) => image.url)];
+}
+
 export async function saveProduct(
   _state: AdminFormState,
   formData: FormData,
@@ -162,27 +176,42 @@ export async function saveProduct(
   };
   const collectionIds = formData.getAll("collectionIds").map(String);
   const productId = id ?? randomUUID();
-  const save = id
-    ? db.update(products).set(values).where(eq(products.id, productId))
-    : db.insert(products).values({ id: productId, ...values });
-  const clearLinks = db
-    .delete(productsToCollections)
-    .where(eq(productsToCollections.productId, productId));
+  const gallery = normalizeGallery({
+    urls: formData.getAll("galleryUrl").map(String),
+    alts: formData.getAll("galleryAlt").map(String),
+    fallbackAlt: name,
+  });
+
+  // Guarda as imagens atuais para limpar do Blob as que forem descartadas neste salvamento.
+  const previousImages = id ? await currentProductImageUrls(productId) : [];
+
+  const statements: Array<BatchItem<"pg">> = [
+    id
+      ? db.update(products).set(values).where(eq(products.id, productId))
+      : db.insert(products).values({ id: productId, ...values }),
+    db.delete(productsToCollections).where(eq(productsToCollections.productId, productId)),
+    db.delete(productImages).where(eq(productImages.productId, productId)),
+  ];
+  if (collectionIds.length) {
+    statements.push(
+      db
+        .insert(productsToCollections)
+        .values(collectionIds.map((collectionId) => ({ productId, collectionId }))),
+    );
+  }
+  if (gallery.length) {
+    statements.push(
+      db.insert(productImages).values(gallery.map((image) => ({ ...image, productId }))),
+    );
+  }
   try {
-    if (collectionIds.length) {
-      await db.batch([
-        save,
-        clearLinks,
-        db
-          .insert(productsToCollections)
-          .values(collectionIds.map((collectionId) => ({ productId, collectionId }))),
-      ]);
-    } else {
-      await db.batch([save, clearLinks]);
-    }
+    await db.batch(statements as [BatchItem<"pg">, ...Array<BatchItem<"pg">>]);
   } catch (error) {
     return { success: false, message: databaseErrorMessage(error, "produto") };
   }
+  await deleteOwnedBlobs(
+    findOrphanImages(previousImages, [values.coverUrl, ...gallery.map((image) => image.url)]),
+  );
   revalidatePath("/admin/produtos");
   revalidatePath("/catalogo");
   revalidatePath("/colecoes");
